@@ -1,0 +1,12 @@
+{
+    "name": "hdfs-source-connector",
+    "config": {
+        "connector.class": "io.confluent.connect.hdfs3.Hdfs3SourceConnector",
+        "tasks.max": "1",
+        "topics": "hdfs_topic",
+        "hdfs.url": "hdfs://192.168.89.83:9000",
+        "hdfs.directory": "/mydata",
+        "format.class": "io.confluent.connect.hdfs3.format.json.JsonFormat",
+        "value.converter": "org.apache.kafka.connect.storage.StringConverter"
+    }
+}
