@@ -1,5 +1,45 @@
 version: '2'
 services:
+  nessie:
+    image: ghcr.io/projectnessie/nessie:0.96.1
+    ports:
+      # API port
+      - "19120:19120"
+      # Management port (metrics and health checks)
+      - "1999:1999"
+    environment:
+      # Version store settings.
+      # This example uses ephemeral storage, data is lost during reset.
+      - nessie.version.store.type=IN_MEMORY
+      # Object store settings.
+      # This example uses MinIO as the object store.
+      - nessie.catalog.default-warehouse=warehouse
+      - nessie.catalog.warehouses.warehouse.location=s3://cdcwarehouse/
+      - nessie.catalog.service.s3.default-options.region=us-east-1
+      - nessie.catalog.service.s3.default-options.path-style-access=true
+      - nessie.catalog.service.s3.default-options.access-key=urn:nessie-secret:quarkus:nessie.catalog.secrets.access-key
+      - nessie.catalog.secrets.access-key.name=root
+      - nessie.catalog.secrets.access-key.secret=rootroot
+      # MinIO endpoint for Nessie server
+      - nessie.catalog.service.s3.default-options.endpoint=http://miniostorage:6060/
+      # MinIO endpoint for clients (on the Podman/Docker host)
+      - nessie.catalog.service.s3.default-options.external-endpoint=http://miniostorage:9001/
+
+    healthcheck:
+      test: "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /q/health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"
+      interval: 5s
+      timeout: 2s
+      retries: 15
+
+  dremio:
+    image: dremio/dremio-oss:latest
+    platform: linux/x86_64
+    ports:
+      - 9047:9047
+      - 31010:31010
+      - 32010:32010
+
+##############################################################################################
 
   postgres:
     image: postgres:latest
@@ -27,9 +67,11 @@ services:
       MINIO_DEFAULT_BUCKETS: ulogs
     command: server --address ":6060" --console-address ":9001" /data
 
+##############################################################################################
+
   spark_client: 
     container_name: spark_client
-    image: jupyter/pyspark-notebook:hadoop-3
+    image: jupyter/pyspark-notebook:spark-3.3.2
     ports:
       - 8888:8888
       - 8889:8888
@@ -39,6 +81,8 @@ services:
     volumes:
       - ./spark:/dataops
       - ./notebooks:/home/jovyan
+
+##############################################################################################
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -162,6 +206,8 @@ services:
       KAFKA_REST_BOOTSTRAP_SERVERS: 'kafka:29092'
       KAFKA_REST_LISTENERS: "http://0.0.0.0:8082"
       KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+
+##############################################################################################
 
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
