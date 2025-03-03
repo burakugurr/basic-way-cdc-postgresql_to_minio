@@ -1,5 +1,34 @@
 version: '2'
 services:
+  # nessie garage collector
+  nessie-gc:
+    image: ghcr.io/projectnessie/nessie-gc:latest
+    command:
+    # uncomment if you want to use create-sql-schema to create the nessie_gc schema in the database
+      #- create-sql-schema 
+      - --jdbc-url
+      - jdbc:s3://<minio-server>:<port>/<bucket-name>?accessKey=<your-access-key>&secretKey=<your-secret-key>
+      - --jdbc-user
+      - postgres
+      - --jdbc-password
+      - postgres
+    restart: "no"
+
+##############################################################################################
+
+  hivemetastore:
+    image: apache/hive:4.0.0-alpha-2
+    container_name: hivemetastore
+    environment:
+      - SERVICE_NAME=metastore
+      - DB_DRIVER=postgres
+      - SERVICE_OPTS=-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/metastore -Djavax.jdo.option.ConnectionUserName=hive -Djavax.jdo.option.ConnectionPassword=password
+    ports:
+      - "9083:9083"
+    volumes:
+      - /opt/hive/conf:/etc/hive
+
+
   nessie:
     image: ghcr.io/projectnessie/nessie:0.96.1
     ports:
@@ -24,6 +53,11 @@ services:
       - nessie.catalog.service.s3.default-options.endpoint=http://miniostorage:6060/
       # MinIO endpoint for clients (on the Podman/Docker host)
       - nessie.catalog.service.s3.default-options.external-endpoint=http://miniostorage:9001/
+      - NESSIE_GC_ENABLED=true # GC'yi etkinleştir
+      - NESSIE_GC_SCHEDULE="0 0 0 * * *" # GC'yi her gece sıfırda çalıştırmak için cron ifadesi
+      - NESSIE_GC_RETENTION_PERIOD=30d # Veritabanındaki eski nesneleri 30 gün sonra sil
+      - NESSIE_GC_BUDGET=1GB # GC için tahsis edilen bellek
+      - NESSIE_JDBC_ENABLED=true # JDBC desteğini etkinleştir
 
     healthcheck:
       test: "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /q/health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"
@@ -49,9 +83,10 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    command: "postgres -c wal_level=logical"
     volumes:
-    - ./postgres-data:/var/lib/postgresql/data
+      - ./postgres-data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    command: ["postgres", "-c", "wal_level=logical"]
 
   miniostorage:
     image: minio/minio
